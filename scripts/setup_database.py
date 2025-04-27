@@ -1,22 +1,14 @@
 import os
 import psycopg2
 from psycopg2 import sql
-from dotenv import load_dotenv
+# Remove: from dotenv import load_dotenv (Handled by config.py)
+import sys # Used for path modification
 
-# Load environment variables from .env file
-load_dotenv()
+# --- Add Project Root to Python Path ---
+# This helps Python find the 'config' module when running scripts from the 'scripts' directory
+import config # Import settings from config/config.py
 
-# --- Database Connection Details ---
-# Placeholder values - we will load these from environment variables later
-# For now, you might need to manually enter your details here for testing,
-# OR create a .env file right away.
-DB_NAME = os.getenv("DB_NAME", "content_creation")
-DB_USER = os.getenv("DB_USER", "postgres") # Replace 'postgres' if your user is different
-DB_PASSWORD = os.getenv("DB_PASSWORD", "astraminaria") # Replace with your actual password (As provided by user)
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
-
-# --- SQL Commands to Create Schema and Tables ---
+# --- SQL Commands (Remain the Same) ---
 
 # Drop existing schema and tables if they exist (for a clean reset)
 # Use CASCADE to drop objects that depend on the schema/tables
@@ -119,7 +111,7 @@ CREATE TABLE content_creation.embeddings (
     -- Add scene_id if embedding scenes: scene_id INTEGER REFERENCES content_creation.scenes(id) ON DELETE CASCADE,
     description TEXT, -- e.g., "Transcript segment", "Scene description"
     model_name VARCHAR(100), -- e.g., 'all-MiniLM-L6-v2'
-    embedding VECTOR(384) NOT NULL, -- Adjust dimension (384) based on your model!
+    embedding VECTOR(384) NOT NULL, -- Use config.EMBEDDING_DIMENSION if defined, else hardcode
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     -- Ensure at least one foreign key is linked
     CONSTRAINT chk_embedding_source CHECK (media_id IS NOT NULL OR transcript_id IS NOT NULL ) -- Add OR scene_id IS NOT NULL if embedding scenes
@@ -134,43 +126,44 @@ CREATE INDEX ON content_creation.embeddings USING hnsw (embedding vector_cosine_
 # --- Main Execution Function ---
 
 def setup_database():
-    """Connects to PostgreSQL, drops/creates schema, creates tables."""
+    """Connects to PostgreSQL, drops/creates schema, creates tables using config."""
     conn = None
     cursor = None
     try:
         # Connect to the PostgreSQL server (connect to default 'postgres' db first)
-        print(f"Connecting to PostgreSQL server at {DB_HOST}:{DB_PORT}...")
+        # Use values from config module
+        print(f"Connecting to PostgreSQL server at {config.DB_HOST}:{config.DB_PORT}...")
         conn = psycopg2.connect(
             dbname="postgres", # Connect to default db to manage other dbs/extensions
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+            host=config.DB_HOST,
+            port=config.DB_PORT
         )
         conn.autocommit = True # Autocommit for DDL commands like CREATE/DROP DATABASE/EXTENSION
         cursor = conn.cursor()
 
-        print(f"Checking if database '{DB_NAME}' exists...")
-        cursor.execute(sql.SQL("SELECT 1 FROM pg_database WHERE datname = %s"), (DB_NAME,))
+        print(f"Checking if database '{config.DB_NAME}' exists...")
+        cursor.execute(sql.SQL("SELECT 1 FROM pg_database WHERE datname = %s"), (config.DB_NAME,))
         exists = cursor.fetchone()
         if not exists:
-            print(f"Database '{DB_NAME}' does not exist. Creating...")
-            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(DB_NAME)))
-            print(f"Database '{DB_NAME}' created.")
+            print(f"Database '{config.DB_NAME}' does not exist. Creating...")
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(config.DB_NAME)))
+            print(f"Database '{config.DB_NAME}' created.")
         else:
-            print(f"Database '{DB_NAME}' already exists.")
+            print(f"Database '{config.DB_NAME}' already exists.")
 
         # Close initial connection and reconnect to the specific database
-        print(f"Reconnecting to database '{DB_NAME}'...")
+        print(f"Reconnecting to database '{config.DB_NAME}'...")
         cursor.close()
         conn.close()
 
         conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            host=DB_HOST,
-            port=DB_PORT
+            dbname=config.DB_NAME, # Use config value here
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+            host=config.DB_HOST,
+            port=config.DB_PORT
         )
         cursor = conn.cursor()
 
@@ -213,8 +206,8 @@ def setup_database():
         conn.commit()
         print("Database setup completed successfully!")
 
-    except psycopg2.Error as e:
-        print(f"Database error: {e}")
+    except (psycopg2.Error, ImportError, AttributeError) as e: # Catch potential config import errors too
+        print(f"Error during database setup: {e}")
         # Rollback in case of error during table creation
         if conn:
             conn.rollback()
