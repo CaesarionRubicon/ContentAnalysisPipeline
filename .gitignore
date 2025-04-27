@@ -1,0 +1,31 @@
+# Git ignore file 
+# Virtual environment
+venv/
+.venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+
+# IDE / Editor specific files
+.vscode/
+.idea/
+
+# Output files (logs, clips, potentially large processed data)
+outputs/
+# data/processed/embeddings/  # Optionally ignore if embeddings become very large
+# data/processed/summaries/   # Optionally ignore if summaries become very large
+# data/raw/                   # Consider ignoring if raw media files are huge and managed elsewhere
+
+# Temporary files
+*.tmp
+*~
+
+# OS specific files
+.DS_Store
+Thumbs.db

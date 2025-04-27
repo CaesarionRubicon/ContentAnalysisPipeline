@@ -1,0 +1,16 @@
+click
+ffmpeg-python
+yt-dlp
+scenedetect[opencv]
+facenet-pytorch
+ultralytics
+openai-whisper
+pysrt
+openai
+librosa
+numpy
+face-recognition
+psycopg2-binary
+python-dotenv
+pgvector
+sentence-transformers
