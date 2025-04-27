@@ -21,6 +21,8 @@ outputs/
 # data/processed/embeddings/  # Optionally ignore if embeddings become very large
 # data/processed/summaries/   # Optionally ignore if summaries become very large
 # data/raw/                   # Consider ignoring if raw media files are huge and managed elsewhere
+# Ignore old reference scripts
+scripts/_old_scripts_reference/
 
 # Temporary files
 *.tmp
