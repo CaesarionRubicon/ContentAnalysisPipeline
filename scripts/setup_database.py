@@ -6,7 +6,7 @@ import sys # Used for path modification
 
 # --- Add Project Root to Python Path ---
 # This helps Python find the 'config' module when running scripts from the 'scripts' directory
-import config # Import settings from config/config.py
+from config import config # Import the config module from the config directory
 
 # --- SQL Commands (Remain the Same) ---
 
@@ -66,7 +66,6 @@ CREATE_TRANSCRIPTS_INDEX_SQL = """
 CREATE INDEX idx_transcripts_media_time ON content_creation.transcripts (media_id, start_sec, end_sec);
 """
 
-
 # Create the objects table (referencing media table) - Schema example
 CREATE_OBJECTS_TABLE_SQL = """
 CREATE TABLE content_creation.objects (
@@ -121,6 +120,28 @@ CREATE TABLE content_creation.embeddings (
 # Adjust parameters based on your data size and performance needs
 CREATE_EMBEDDINGS_INDEX_SQL = """
 CREATE INDEX ON content_creation.embeddings USING hnsw (embedding vector_cosine_ops);
+"""
+
+# Create the entities table (linking to transcripts)
+CREATE_ENTITIES_TABLE_SQL = """
+CREATE TABLE content_creation.entities (
+    id SERIAL PRIMARY KEY,
+    transcript_id INTEGER NOT NULL REFERENCES content_creation.transcripts(id) ON DELETE CASCADE,
+    media_id INTEGER NOT NULL REFERENCES content_creation.media(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,         -- The actual entity text (e.g., "Steve Jobs")
+    label VARCHAR(50) NOT NULL, -- The entity type (e.g., "PERSON", "ORG", "GPE")
+    start_char INTEGER NOT NULL, -- Start character offset in transcript text
+    end_char INTEGER NOT NULL,   -- End character offset in transcript text
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    -- Add UNIQUE constraint? Maybe not, same entity could appear multiple times
+);
+"""
+# Add index for faster lookup by transcript_id or label
+CREATE_ENTITIES_INDEX_SQL = """
+CREATE INDEX idx_entities_transcript_label ON content_creation.entities (transcript_id, label);
+"""
+CREATE_ENTITIES_MEDIA_INDEX_SQL = """
+CREATE INDEX idx_entities_media_label ON content_creation.entities (media_id, label);
 """
 
 # --- Main Execution Function ---
@@ -201,6 +222,11 @@ def setup_database():
         print("Creating HNSW index on 'embeddings'...")
         cursor.execute(CREATE_EMBEDDINGS_INDEX_SQL)
 
+        print("Creating table 'entities'...")
+        cursor.execute(CREATE_ENTITIES_TABLE_SQL)
+        print("Creating indexes on 'entities'...")
+        cursor.execute(CREATE_ENTITIES_INDEX_SQL)
+        cursor.execute(CREATE_ENTITIES_MEDIA_INDEX_SQL)
 
         # Commit the changes for table/index creation
         conn.commit()
