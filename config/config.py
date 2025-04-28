@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 # Determine the project root directory (assuming config.py is in a 'config' subfolder)
 PROJECT_ROOT = Path(__file__).parent.parent
 dotenv_path = PROJECT_ROOT / '.env'
-load_dotenv(dotenv_path=dotenv_path)
+# *** MODIFIED THIS LINE ***
+load_dotenv(dotenv_path=dotenv_path, override=True)
 
 # --- Database Configuration ---
 DB_NAME = os.getenv("DB_NAME", "content_creation")
@@ -58,6 +59,13 @@ SUPPORTED_EXTENSIONS = {
 # Simple check to warn if the password is not set in .env
 if DB_PASSWORD is None:
     print("WARNING: DB_PASSWORD not found in .env file. Database connections may fail.")
+
+# Check if OPENAI_API_KEY is loaded - Added for clarity during execution
+if OPENAI_API_KEY:
+    print(f"OpenAI API Key loaded (starts with: {OPENAI_API_KEY[:7]}...).") # Show first few chars
+else:
+    print("WARNING: OPENAI_API_KEY not found or empty in environment/config.")
+
 
 print(f"Configuration loaded. Project Root: {PROJECT_ROOT}")
 print(f"Log directory: {LOGS_DIR}")
