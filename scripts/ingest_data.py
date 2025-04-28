@@ -11,7 +11,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-import config # Import settings from config/config.py
+from config import config # Import the 'config.py' module from the 'config' directory
 
 # --- Logging Setup ---
 # Set up basic logging to file and console
