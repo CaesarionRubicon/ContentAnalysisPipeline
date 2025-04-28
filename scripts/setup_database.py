@@ -1,17 +1,18 @@
 import os
 import psycopg2
 from psycopg2 import sql
-# Remove: from dotenv import load_dotenv (Handled by config.py)
-import sys # Used for path modification
+import sys
+from pathlib import Path # Use pathlib
 
 # --- Add Project Root to Python Path ---
-# This helps Python find the 'config' module when running scripts from the 'scripts' directory
+PROJECT_ROOT = Path(__file__).resolve().parent.parent # More robust way to get project root
+sys.path.append(str(PROJECT_ROOT))
+
 from config import config # Import the config module from the config directory
 
-# --- SQL Commands (Remain the Same) ---
+# --- SQL Commands ---
 
 # Drop existing schema and tables if they exist (for a clean reset)
-# Use CASCADE to drop objects that depend on the schema/tables
 DROP_SCHEMA_SQL = """
 DROP SCHEMA IF EXISTS content_creation CASCADE;
 """
@@ -21,24 +22,24 @@ CREATE_SCHEMA_SQL = """
 CREATE SCHEMA content_creation;
 """
 
-# Create the media table (renamed from videos, added media_type, source_uri, status)
+# Create the media table
 CREATE_MEDIA_TABLE_SQL = """
 CREATE TABLE content_creation.media (
     id SERIAL PRIMARY KEY,
     filename VARCHAR(255),
-    source_uri VARCHAR(1024) NOT NULL UNIQUE, -- Path or URL, must be unique
-    media_type VARCHAR(20) NOT NULL, -- 'video', 'audio', 'image'
+    source_uri VARCHAR(1024) NOT NULL UNIQUE,
+    media_type VARCHAR(20) NOT NULL,
     title VARCHAR(255),
-    duration REAL, -- Duration in seconds (float)
-    status VARCHAR(50) DEFAULT 'pending', -- e.g., pending, processing, completed, error
+    duration REAL,
+    status VARCHAR(50) DEFAULT 'pending',
     error_message TEXT,
-    metadata JSONB, -- Store other metadata like resolution, frame rate, etc.
+    metadata JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 """
 
-# Create the scenes table (referencing media table)
+# Create the scenes table
 CREATE_SCENES_TABLE_SQL = """
 CREATE TABLE content_creation.scenes (
     id SERIAL PRIMARY KEY,
@@ -49,25 +50,24 @@ CREATE TABLE content_creation.scenes (
 );
 """
 
-# Create the transcripts table (referencing media table)
+# Create the transcripts table
 CREATE_TRANSCRIPTS_TABLE_SQL = """
 CREATE TABLE content_creation.transcripts (
     id SERIAL PRIMARY KEY,
     media_id INTEGER NOT NULL REFERENCES content_creation.media(id) ON DELETE CASCADE,
-    start_sec REAL, -- Can be NULL if transcript applies to whole media
-    end_sec REAL,   -- Can be NULL
+    start_sec REAL,
+    end_sec REAL,
     text TEXT NOT NULL,
-    confidence REAL, -- Optional confidence score from STT
-    status VARCHAR(50) DEFAULT 'pending_enrichment',
+    confidence REAL,
+    status VARCHAR(50) DEFAULT 'pending_enrichment', -- Status workflow: pending_enrichment -> entities_extracted -> summarized -> tags_generated -> complete?
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 """
-# Add index for faster lookup by media_id and time
 CREATE_TRANSCRIPTS_INDEX_SQL = """
 CREATE INDEX idx_transcripts_media_time ON content_creation.transcripts (media_id, start_sec, end_sec);
 """
 
-# Create the objects table (referencing media table) - Schema example
+# Create the objects table
 CREATE_OBJECTS_TABLE_SQL = """
 CREATE TABLE content_creation.objects (
     id SERIAL PRIMARY KEY,
@@ -76,73 +76,123 @@ CREATE TABLE content_creation.objects (
     end_sec REAL NOT NULL,
     label VARCHAR(255) NOT NULL,
     confidence REAL,
-    bounding_box JSONB, -- Store coordinates if available
+    bounding_box JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 """
 
-# Create the faces table (referencing media table) - Schema example
+# Create the faces table
 CREATE_FACES_TABLE_SQL = """
 CREATE TABLE content_creation.faces (
     id SERIAL PRIMARY KEY,
     media_id INTEGER NOT NULL REFERENCES content_creation.media(id) ON DELETE CASCADE,
     start_sec REAL NOT NULL,
     end_sec REAL NOT NULL,
-    face_id VARCHAR(255), -- ID assigned by detection/recognition system
+    face_id VARCHAR(255),
     confidence REAL,
     bounding_box JSONB,
-    embedding BYTEA, -- Placeholder for potential face embeddings (vector)
+    embedding BYTEA,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 """
 
-# Enable the pgvector extension (if not already enabled in the database)
+# Enable pgvector extension
 ENABLE_PGVECTOR_SQL = """
 CREATE EXTENSION IF NOT EXISTS vector;
 """
 
-# Create the embeddings table (referencing media OR potentially scenes/transcripts)
-# Storing embeddings for transcript segments might be common
+# Create embeddings table
 CREATE_EMBEDDINGS_TABLE_SQL = """
 CREATE TABLE content_creation.embeddings (
     id SERIAL PRIMARY KEY,
     media_id INTEGER REFERENCES content_creation.media(id) ON DELETE CASCADE,
     transcript_id INTEGER REFERENCES content_creation.transcripts(id) ON DELETE CASCADE,
-    -- Add scene_id if embedding scenes: scene_id INTEGER REFERENCES content_creation.scenes(id) ON DELETE CASCADE,
-    description TEXT, -- e.g., "Transcript segment", "Scene description"
-    model_name VARCHAR(100), -- e.g., 'all-MiniLM-L6-v2'
-    embedding VECTOR(384) NOT NULL, -- Use config.EMBEDDING_DIMENSION if defined, else hardcode
+    description TEXT,
+    model_name VARCHAR(100),
+    embedding VECTOR(384) NOT NULL, -- Using config.EMBEDDING_DIMENSION value
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    -- Ensure at least one foreign key is linked
-    CONSTRAINT chk_embedding_source CHECK (media_id IS NOT NULL OR transcript_id IS NOT NULL ) -- Add OR scene_id IS NOT NULL if embedding scenes
+    CONSTRAINT chk_embedding_source CHECK (media_id IS NOT NULL OR transcript_id IS NOT NULL )
 );
 """
-# Add index for faster vector similarity search (using HNSW index here)
-# Adjust parameters based on your data size and performance needs
 CREATE_EMBEDDINGS_INDEX_SQL = """
 CREATE INDEX ON content_creation.embeddings USING hnsw (embedding vector_cosine_ops);
 """
 
-# Create the entities table (linking to transcripts)
+# Create entities table
 CREATE_ENTITIES_TABLE_SQL = """
 CREATE TABLE content_creation.entities (
     id SERIAL PRIMARY KEY,
     transcript_id INTEGER NOT NULL REFERENCES content_creation.transcripts(id) ON DELETE CASCADE,
     media_id INTEGER NOT NULL REFERENCES content_creation.media(id) ON DELETE CASCADE,
-    text TEXT NOT NULL,         -- The actual entity text (e.g., "Steve Jobs")
-    label VARCHAR(50) NOT NULL, -- The entity type (e.g., "PERSON", "ORG", "GPE")
-    start_char INTEGER NOT NULL, -- Start character offset in transcript text
-    end_char INTEGER NOT NULL,   -- End character offset in transcript text
+    text TEXT NOT NULL,
+    label VARCHAR(50) NOT NULL,
+    start_char INTEGER NOT NULL,
+    end_char INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    -- Add UNIQUE constraint? Maybe not, same entity could appear multiple times
 );
 """
-# Add index for faster lookup by transcript_id or label
 CREATE_ENTITIES_INDEX_SQL = """
 CREATE INDEX idx_entities_transcript_label ON content_creation.entities (transcript_id, label);
 """
 CREATE_ENTITIES_MEDIA_INDEX_SQL = """
 CREATE INDEX idx_entities_media_label ON content_creation.entities (media_id, label);
+"""
+
+# Create summaries table
+CREATE_SUMMARIES_TABLE_SQL = """
+CREATE TABLE content_creation.summaries (
+    summary_id SERIAL PRIMARY KEY,
+    transcript_id INTEGER NOT NULL REFERENCES content_creation.transcripts(id) ON DELETE CASCADE,
+    media_id INTEGER NOT NULL REFERENCES content_creation.media(id) ON DELETE CASCADE,
+    summary_text TEXT,
+    model_used VARCHAR(100),
+    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+"""
+CREATE_SUMMARIES_INDEX_TRANSCRIPT_SQL = """
+CREATE INDEX IF NOT EXISTS idx_summaries_transcript_id ON content_creation.summaries(transcript_id);
+"""
+CREATE_SUMMARIES_INDEX_MEDIA_SQL = """
+CREATE INDEX IF NOT EXISTS idx_summaries_media_id ON content_creation.summaries(media_id);
+"""
+
+# *** NEW: Create content_tags table ***
+CREATE_CONTENT_TAGS_TABLE_SQL = """
+CREATE TABLE content_creation.content_tags (
+    tag_id SERIAL PRIMARY KEY,
+    transcript_id INTEGER NOT NULL REFERENCES content_creation.transcripts(id) ON DELETE CASCADE,
+    media_id INTEGER NOT NULL REFERENCES content_creation.media(id) ON DELETE CASCADE,
+    tag_type VARCHAR(50) NOT NULL CHECK (tag_type IN ('keyword', 'topic', 'sentiment', 'action', 'entity')),
+    tag_value VARCHAR(255) NOT NULL,
+    model_used VARCHAR(100),
+    score REAL CHECK (score IS NULL OR (score >= 0 AND score <= 1)),
+    start_sec REAL,
+    end_sec REAL,
+    start_char INTEGER,
+    end_char INTEGER,
+    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_valid_time_range CHECK (start_sec IS NULL OR end_sec IS NULL OR start_sec <= end_sec),
+    CONSTRAINT chk_valid_char_range CHECK (start_char IS NULL OR end_char IS NULL OR start_char <= end_char)
+);
+"""
+# *** NEW: Add indexes for content_tags table ***
+CREATE_TAGS_INDEX_TRANSCRIPT_SQL = """
+CREATE INDEX IF NOT EXISTS idx_tags_transcript_id ON content_creation.content_tags(transcript_id);
+"""
+CREATE_TAGS_INDEX_MEDIA_SQL = """
+CREATE INDEX IF NOT EXISTS idx_tags_media_id ON content_creation.content_tags(media_id);
+"""
+CREATE_TAGS_INDEX_TYPE_SQL = """
+CREATE INDEX IF NOT EXISTS idx_tags_type ON content_creation.content_tags(tag_type);
+"""
+CREATE_TAGS_INDEX_VALUE_SQL = """
+CREATE INDEX IF NOT EXISTS idx_tags_value ON content_creation.content_tags(tag_value);
+"""
+CREATE_TAGS_INDEX_TYPE_VALUE_SQL = """
+CREATE INDEX IF NOT EXISTS idx_tags_type_value ON content_creation.content_tags(tag_type, tag_value);
+"""
+CREATE_TAGS_INDEX_TIME_SQL = """
+CREATE INDEX IF NOT EXISTS idx_tags_time ON content_creation.content_tags(media_id, start_sec, end_sec) WHERE start_sec IS NOT NULL AND end_sec IS NOT NULL;
 """
 
 # --- Main Execution Function ---
@@ -153,16 +203,15 @@ def setup_database():
     cursor = None
     try:
         # Connect to the PostgreSQL server (connect to default 'postgres' db first)
-        # Use values from config module
         print(f"Connecting to PostgreSQL server at {config.DB_HOST}:{config.DB_PORT}...")
         conn = psycopg2.connect(
-            dbname="postgres", # Connect to default db to manage other dbs/extensions
+            dbname="postgres",
             user=config.DB_USER,
             password=config.DB_PASSWORD,
             host=config.DB_HOST,
             port=config.DB_PORT
         )
-        conn.autocommit = True # Autocommit for DDL commands like CREATE/DROP DATABASE/EXTENSION
+        conn.autocommit = True
         cursor = conn.cursor()
 
         print(f"Checking if database '{config.DB_NAME}' exists...")
@@ -181,7 +230,7 @@ def setup_database():
         conn.close()
 
         conn = psycopg2.connect(
-            dbname=config.DB_NAME, # Use config value here
+            dbname=config.DB_NAME,
             user=config.DB_USER,
             password=config.DB_PASSWORD,
             host=config.DB_HOST,
@@ -199,7 +248,7 @@ def setup_database():
         cursor.execute(CREATE_SCHEMA_SQL)
 
         print("Enabling pgvector extension...")
-        cursor.execute(ENABLE_PGVECTOR_SQL) # Needs to be run before creating tables with VECTOR type
+        cursor.execute(ENABLE_PGVECTOR_SQL)
 
         print("Creating table 'media'...")
         cursor.execute(CREATE_MEDIA_TABLE_SQL)
@@ -229,13 +278,29 @@ def setup_database():
         cursor.execute(CREATE_ENTITIES_INDEX_SQL)
         cursor.execute(CREATE_ENTITIES_MEDIA_INDEX_SQL)
 
+        print("Creating table 'summaries'...")
+        cursor.execute(CREATE_SUMMARIES_TABLE_SQL)
+        print("Creating indexes on 'summaries'...")
+        cursor.execute(CREATE_SUMMARIES_INDEX_TRANSCRIPT_SQL)
+        cursor.execute(CREATE_SUMMARIES_INDEX_MEDIA_SQL)
+
+        # *** NEW: Create content_tags table and indexes ***
+        print("Creating table 'content_tags'...")
+        cursor.execute(CREATE_CONTENT_TAGS_TABLE_SQL)
+        print("Creating indexes on 'content_tags'...")
+        cursor.execute(CREATE_TAGS_INDEX_TRANSCRIPT_SQL)
+        cursor.execute(CREATE_TAGS_INDEX_MEDIA_SQL)
+        cursor.execute(CREATE_TAGS_INDEX_TYPE_SQL)
+        cursor.execute(CREATE_TAGS_INDEX_VALUE_SQL)
+        cursor.execute(CREATE_TAGS_INDEX_TYPE_VALUE_SQL)
+        cursor.execute(CREATE_TAGS_INDEX_TIME_SQL)
+
         # Commit the changes for table/index creation
         conn.commit()
         print("Database setup completed successfully!")
 
-    except (psycopg2.Error, ImportError, AttributeError) as e: # Catch potential config import errors too
+    except (psycopg2.Error, ImportError, AttributeError) as e:
         print(f"Error during database setup: {e}")
-        # Rollback in case of error during table creation
         if conn:
             conn.rollback()
     finally:
@@ -248,5 +313,4 @@ def setup_database():
 
 # --- Run the Setup ---
 if __name__ == "__main__":
-    # This ensures the setup runs only when the script is executed directly
     setup_database()
