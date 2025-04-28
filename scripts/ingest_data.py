@@ -5,16 +5,18 @@ import argparse
 import psycopg2
 from psycopg2 import sql
 from pathlib import Path
-import json  # Import the json module for serialization
-from pymediainfo import MediaInfo  # Import MediaInfo
-import pysrt  # Import pysrt for SRT parsing
-import whisper  # Import Whisper
+import json # Import the json module for serialization
+from pymediainfo import MediaInfo # Import MediaInfo
+import pysrt # Import pysrt for SRT parsing
+import whisper # Import Whisper
 
 # --- Add Project Root to Python Path ---
+# Ensures 'config' can be imported when running script from 'scripts' directory or root
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from config import config  # Import settings from config/config.py
+from config import config # Import settings from config/config.py
+# Use explicit import from scripts package
 from scripts import db_utils # Import database utilities
 
 # --- Logging Setup ---
@@ -23,10 +25,11 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_file, encoding='utf-8'),  # Specify UTF-8 for log file
-        logging.StreamHandler()  # Log to console
+        logging.FileHandler(log_file, encoding='utf-8'), # Specify UTF-8 for log file
+        logging.StreamHandler()        # Log to console
     ]
 )
+# Initial message moved to main execution block
 
 # --- Core Ingestion Functions ---
 
@@ -36,9 +39,9 @@ def register_media_file(source_path_str, media_type):
     Extracts duration and metadata using pymediainfo and updates the record.
     Returns the media_id or None if an error occurs.
     """
-    conn = db_utils.get_db_connection()
+    conn = db_utils.get_db_connection() # Use db_utils
     if not conn:
-        return None  # Connection failed
+        return None
 
     source_path = Path(source_path_str)
     if not source_path.is_file():
@@ -68,52 +71,49 @@ def register_media_file(source_path_str, media_type):
                     duration = duration_ms / 1000.0
                     logging.info(f"Extracted duration for {filename}: {duration:.2f} seconds")
                 except (ValueError, TypeError):
-                    logging.warning(f"Could not parse duration value '{duration_str}' for {filename}")
-                    duration = 0.0
+                     logging.warning(f"Could not parse duration value '{duration_str}' for {filename}")
+                     duration = 0.0
             else:
-                logging.warning(f"Duration field empty in General track for {filename}")
-                duration = 0.0
+                 logging.warning(f"Duration field empty in General track for {filename}")
+                 duration = 0.0
         else:
-            logging.warning(f"Could not find duration in General track for {filename}")
-            duration = 0.0
+             logging.warning(f"Could not find duration in General track for {filename}")
+             duration = 0.0
 
         if media_info_data:
-            try:
-                metadata_to_store = {}
-                general_track_data = next((t for t in media_info_data.get('tracks', []) if t['track_type'] == 'General'), None)
-                video_track_data = next((t for t in media_info_data.get('tracks', []) if t['track_type'] == 'Video'), None)
-                audio_track_data = next((t for t in media_info_data.get('tracks', []) if t['track_type'] == 'Audio'), None)
+             try:
+                 metadata_to_store = {}
+                 general_track_data = next((t for t in media_info_data.get('tracks', []) if t['track_type'] == 'General'), None)
+                 video_track_data = next((t for t in media_info_data.get('tracks', []) if t['track_type'] == 'Video'), None)
+                 audio_track_data = next((t for t in media_info_data.get('tracks', []) if t['track_type'] == 'Audio'), None)
 
-                if general_track_data:
-                    metadata_to_store['format_name'] = general_track_data.get('format')
-                    metadata_to_store['file_size'] = general_track_data.get('file_size')
+                 if general_track_data:
+                     metadata_to_store['format_name'] = general_track_data.get('format')
+                     metadata_to_store['file_size'] = general_track_data.get('file_size')
+                 if video_track_data:
+                     metadata_to_store['video_codec'] = video_track_data.get('codec_id')
+                     metadata_to_store['width'] = video_track_data.get('width')
+                     metadata_to_store['height'] = video_track_data.get('height')
+                     metadata_to_store['frame_rate'] = video_track_data.get('frame_rate')
+                     metadata_to_store['video_bitrate'] = video_track_data.get('bit_rate')
+                 if audio_track_data:
+                      metadata_to_store['audio_codec'] = audio_track_data.get('codec_id')
+                      metadata_to_store['audio_channels'] = audio_track_data.get('channel_s')
+                      metadata_to_store['audio_bitrate'] = audio_track_data.get('bit_rate')
 
-                if video_track_data:
-                    metadata_to_store['video_codec'] = video_track_data.get('codec_id')
-                    metadata_to_store['width'] = video_track_data.get('width')
-                    metadata_to_store['height'] = video_track_data.get('height')
-                    metadata_to_store['frame_rate'] = video_track_data.get('frame_rate')
-                    metadata_to_store['video_bitrate'] = video_track_data.get('bit_rate')
-
-                if audio_track_data:
-                    metadata_to_store['audio_codec'] = audio_track_data.get('codec_id')
-                    metadata_to_store['audio_channels'] = audio_track_data.get('channel_s')
-                    metadata_to_store['audio_bitrate'] = audio_track_data.get('bit_rate')
-
-                if metadata_to_store:
-                    relevant_metadata_json = json.dumps(metadata_to_store, indent=2)
-                    logging.info(f"Extracted metadata: {relevant_metadata_json}")
-                else:
-                    logging.info("No specific metadata fields extracted.")
-
-            except Exception as json_e:
-                logging.error(f"Failed to process or serialize metadata for {filename}: {json_e}")
-                relevant_metadata_json = None
+                 if metadata_to_store:
+                     relevant_metadata_json = json.dumps(metadata_to_store, indent=2)
+                     logging.info(f"Extracted metadata: {relevant_metadata_json}")
+                 else:
+                      logging.info("No specific metadata fields extracted.")
+             except Exception as json_e:
+                 logging.error(f"Failed to process or serialize metadata for {filename}: {json_e}")
+                 relevant_metadata_json = None
 
     except FileNotFoundError:
-        logging.error(f"MediaInfo library (mediainfo.dll or equivalent) not found or accessible in system PATH.")
-        if conn: db_utils.close_db_connection(conn, "register_media_file")
-        return None
+         logging.error(f"MediaInfo library (mediainfo.dll or equivalent) not found.")
+         if conn: db_utils.close_db_connection(conn, "register_media_file (MediaInfo error)")
+         return None
     except Exception as e:
         logging.error(f"Error parsing file {filename} with MediaInfo: {e}")
         duration = 0.0
@@ -131,7 +131,6 @@ def register_media_file(source_path_str, media_type):
                 media_id = result[0]
                 existing_duration = result[1]
                 logging.info(f"Media already registered for {source_uri}. DB ID: {media_id}")
-
                 logging.info(f"Updating metadata/status for existing media ID {media_id}.")
                 if existing_duration is None or abs((existing_duration or 0.0) - duration) > 0.1:
                     logging.info(f"Duration differs or was NULL, updating to {duration:.2f} seconds.")
@@ -139,7 +138,6 @@ def register_media_file(source_path_str, media_type):
                 else:
                     logging.info(f"Duration ({existing_duration:.2f}s) is already up-to-date.")
                     current_duration = existing_duration
-
                 cur.execute(
                     sql.SQL("""
                         UPDATE content_creation.media
@@ -175,9 +173,10 @@ def register_media_file(source_path_str, media_type):
         logging.error(f"Unexpected error during DB interaction for {filename}: {e}")
         media_id = None
     finally:
-        if conn and not conn.closed:
-            db_utils.close_db_connection(conn, "register_media_file")
+        # Close connection here as it was opened at the start of this function
+        db_utils.close_db_connection(conn, "register_media_file")
     return media_id
+
 
 def transcribe_with_whisper(media_path_str, output_dir):
     """Transcribes a media file using Whisper and saves as SRT."""
@@ -198,7 +197,6 @@ def transcribe_with_whisper(media_path_str, output_dir):
         model_size = "base.en"
         logging.info(f"Loading Whisper model: {model_size}")
         model = whisper.load_model(model_size)
-
         logging.info(f"Transcribing {media_path.name} with fp16=True (this may take a while)...")
         result = model.transcribe(media_path_str, fp16=True, verbose=True)
 
@@ -208,21 +206,20 @@ def transcribe_with_whisper(media_path_str, output_dir):
         writer(result, media_path.stem)
 
         if srt_path.is_file():
-            logging.info(f"Whisper transcription completed successfully. Output: {srt_path}")
-            return str(srt_path)
+             logging.info(f"Whisper transcription completed successfully. Output: {srt_path}")
+             return str(srt_path)
         else:
-            logging.error(f"Whisper transcription ran but SRT file was not created at {srt_path}")
-            return None
-
+             logging.error(f"Whisper transcription ran but SRT file was not created at {srt_path}")
+             return None
     except Exception as e:
         logging.error(f"Error during Whisper transcription for {media_path.name}: {e}")
-        if hasattr(e, 'stderr') and e.stderr:
-            logging.error(f"Whisper/ffmpeg stderr: {e.stderr.decode()}")
+        if hasattr(e, 'stderr') and e.stderr: logging.error(f"Whisper/ffmpeg stderr: {e.stderr.decode()}")
         return None
+
 
 def ingest_transcript_file(media_id, transcript_path):
     """Reads an SRT file and inserts segments into the transcripts table."""
-    conn = db_utils.get_db_connection()
+    conn = db_utils.get_db_connection() # Use db_utils
     if not conn:
         logging.error(f"Cannot connect to DB to ingest transcript: {transcript_path.name}")
         return False
@@ -234,20 +231,14 @@ def ingest_transcript_file(media_id, transcript_path):
         subs = None
         for enc in encodings_to_try:
             try:
-                subs = pysrt.open(str(transcript_path), encoding=enc)
-                logging.info(f"Successfully opened transcript with encoding: {enc}")
-                break
-            except UnicodeDecodeError:
-                logging.warning(f"Failed to decode transcript with encoding: {enc}")
-            except FileNotFoundError:
-                logging.error(f"Transcript file not found during open attempt: {transcript_path}")
-                raise
-            except Exception as e_open:
-                logging.error(f"Error opening SRT file {transcript_path.name} with encoding {enc}: {e_open}")
+                 subs = pysrt.open(str(transcript_path), encoding=enc)
+                 logging.info(f"Successfully opened transcript with encoding: {enc}")
+                 break
+            except UnicodeDecodeError: logging.warning(f"Failed to decode transcript with encoding: {enc}")
+            except FileNotFoundError: logging.error(f"Transcript file not found: {transcript_path}"); raise
+            except Exception as e_open: logging.error(f"Error opening SRT file {transcript_path.name} with encoding {enc}: {e_open}")
 
-        if subs is None:
-            logging.error(f"Could not open/decode transcript file {transcript_path.name} with any attempted encoding.")
-            raise IOError("Failed to decode transcript file")
+        if subs is None: raise IOError("Failed to decode transcript file")
 
         logging.info(f"Parsed {len(subs)} subtitle segments from {transcript_path.name}")
 
@@ -260,9 +251,9 @@ def ingest_transcript_file(media_id, transcript_path):
                 start_sec = sub.start.ordinal / 1000.0
                 end_sec = sub.end.ordinal / 1000.0
                 text = sub.text_without_tags
-
                 if not text.strip(): continue
 
+                # --- MODIFIED INSERT: Let DB handle default status ---
                 cur.execute(
                     sql.SQL("""
                         INSERT INTO content_creation.transcripts
@@ -277,10 +268,8 @@ def ingest_transcript_file(media_id, transcript_path):
             logging.info(f"Successfully inserted {insert_count} transcript segments for media ID {media_id}.")
             success = True
 
-    except FileNotFoundError:
-        logging.error(f"Transcript file not found: {transcript_path}")
-    except (pysrt.Error, IOError) as e:
-        logging.error(f"Error parsing/reading SRT file {transcript_path.name}: {e}")
+    except FileNotFoundError: logging.error(f"Transcript file not found logic error: {transcript_path}") # Should be caught earlier
+    except (pysrt.Error, IOError) as e: logging.error(f"Error parsing/reading SRT file {transcript_path.name}: {e}")
     except psycopg2.Error as e:
         logging.error(f"Database error inserting transcripts for media ID {media_id}: {e}")
         if conn: conn.rollback()
@@ -288,9 +277,9 @@ def ingest_transcript_file(media_id, transcript_path):
         logging.error(f"Unexpected error ingesting transcript {transcript_path.name}: {e}")
         if conn: conn.rollback()
     finally:
-        if conn and not conn.closed:
-            db_utils.close_db_connection(conn, "ingest_transcript_file")
+        db_utils.close_db_connection(conn, "ingest_transcript_file") # Use db_utils
     return success
+
 
 def process_single_file(file_path_str):
     """Processes a single media file: registers it, extracts metadata, and ingests transcript."""
@@ -299,23 +288,22 @@ def process_single_file(file_path_str):
 
     extension = file_path.suffix.lower()
     media_type = 'unknown'
-    if extension in ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv']:
+    if extension in config.SUPPORTED_EXTENSIONS['video']: # Use config for extensions
         media_type = 'video'
-    elif extension in ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac']:
+    elif extension in config.SUPPORTED_EXTENSIONS['audio']:
         media_type = 'audio'
-    elif extension in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff']:
-        media_type = 'image'
-        logging.warning(f"Image file type '{extension}' detected. Transcript ingestion will be skipped.")
+    elif extension in config.SUPPORTED_EXTENSIONS['image']:
+         media_type = 'image'
+         logging.warning(f"Image file type '{extension}' detected. Transcript ingestion will be skipped.")
 
     if media_type == 'unknown':
-        logging.warning(f"Skipping file with unknown/unsupported media type extension: {extension} ({file_path.name})")
+        logging.warning(f"Skipping file with unsupported media type extension: {extension} ({file_path.name})")
         return
 
     media_id = register_media_file(str(file_path), media_type)
 
     if media_id and media_type in ['video', 'audio']:
         logging.info(f"Successfully processed/registered file {file_path.name}. Media ID: {media_id}")
-
         transcript_filename_srt = file_path.stem + ".srt"
         transcript_path_srt = config.RAW_TRANSCRIPTS_DIR / transcript_filename_srt
         transcript_to_ingest = None
@@ -327,10 +315,8 @@ def process_single_file(file_path_str):
         else:
             logging.info(f"No existing SRT found. Attempting transcription with Whisper...")
             generated_srt_path = transcribe_with_whisper(str(file_path), str(config.RAW_TRANSCRIPTS_DIR))
-            if generated_srt_path:
-                transcript_to_ingest = generated_srt_path
-            else:
-                logging.error(f"Whisper transcription failed for {file_path.name}.")
+            if generated_srt_path: transcript_to_ingest = generated_srt_path
+            else: logging.error(f"Whisper transcription failed for {file_path.name}.")
 
         if transcript_to_ingest:
             ingest_transcript_file(media_id, Path(transcript_to_ingest))
@@ -348,7 +334,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Ingest media files into the database, extract metadata, and ingest associated transcripts.")
     parser.add_argument("-f", "--file", type=str, help="Path to a single media file to ingest.")
     parser.add_argument("-d", "--directory", type=str, help="Path to a directory of media files to ingest.")
-
     args = parser.parse_args()
 
     if args.file:
@@ -357,12 +342,15 @@ if __name__ == "__main__":
         dir_path = Path(args.directory)
         if dir_path.is_dir():
             logging.info(f"Scanning directory: {args.directory}")
-            count = 0
-            for item in dir_path.iterdir():
+            processed_count = 0
+            total_files = sum(1 for item in dir_path.iterdir() if item.is_file()) # Count files first for progress
+            logging.info(f"Found {total_files} potential files in directory.")
+            for i, item in enumerate(dir_path.iterdir()):
                 if item.is_file():
+                    logging.info(f"Processing file {i+1}/{total_files}: {item.name}") # Progress Log
                     process_single_file(str(item))
-                    count += 1
-            logging.info(f"Finished scanning directory. Processed {count} potential files.")
+                    processed_count += 1
+            logging.info(f"Finished scanning directory. Processed {processed_count} files.")
         else:
             logging.error(f"Provided directory path does not exist or is not a directory: {args.directory}")
     else:

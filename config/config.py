@@ -11,7 +11,7 @@ load_dotenv(dotenv_path=dotenv_path)
 # --- Database Configuration ---
 DB_NAME = os.getenv("DB_NAME", "content_creation")
 DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD") # Load directly from .env
+DB_PASSWORD = os.getenv("DB_PASSWORD")  # Load directly from .env
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 
@@ -39,11 +39,18 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Model Configuration ---
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-EMBEDDING_DIMENSION = 384 # Corresponds to all-MiniLM-L6-v2
+EMBEDDING_DIMENSION = 384  # Corresponds to all-MiniLM-L6-v2
 
 # --- API Configuration ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+# --- File Handling ---
+SUPPORTED_EXTENSIONS = {
+    'video': ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv'],
+    'audio': ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac'],
+    'image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff']
+}
 
 # --- Other Settings ---
 # Example: BATCH_SIZE = 32

@@ -27,26 +27,20 @@ logging.basicConfig(
 )
 
 # --- Load spaCy Model ---
-# Consider making the model name configurable in config.py later
 SPACY_MODEL_NAME = "en_core_web_sm"
+nlp = None # Initialize nlp to None
 try:
     logging.info(f"Loading spaCy model: {SPACY_MODEL_NAME}")
-    # Disable unnecessary components for NER only pipeline for speed
     nlp = spacy.load(SPACY_MODEL_NAME, disable=["tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer"])
-    # If only NER is needed and model supports it directly:
-    # nlp = spacy.load(SPACY_MODEL_NAME, disable=["parser", "lemmatizer"]) # Keep tagger if needed by NER component
-    # Alternatively, just load the NER component if possible in future spaCy versions or custom pipelines
     logging.info(f"spaCy model '{SPACY_MODEL_NAME}' loaded successfully.")
 except OSError:
     logging.error(f"spaCy model '{SPACY_MODEL_NAME}' not found. Please download it: python -m spacy download {SPACY_MODEL_NAME}")
-    nlp = None
 except Exception as e:
     logging.error(f"Error loading spaCy model '{SPACY_MODEL_NAME}': {e}")
-    nlp = None
 
 
 # --- Main Entity Generation Function ---
-def generate_entities(batch_size=50): # Process more transcripts at once
+def generate_entities(batch_size=50):
     """Processes transcripts with spaCy to find and store named entities."""
     if not nlp:
         logging.error("spaCy model not loaded. Cannot generate entities.")
@@ -63,18 +57,15 @@ def generate_entities(batch_size=50): # Process more transcripts at once
     try:
         while True: # Loop to process in batches
             target_transcripts = []
+            processed_ids_in_batch = [] # Keep track of IDs processed in this specific batch
             with conn.cursor() as cur:
-                # Find transcripts that haven't had entities extracted yet
-                # We'll track this by seeing if any entity exists for a given transcript_id
-                logging.info(f"Fetching batch of {batch_size} transcripts needing entity extraction...")
+                # Find transcripts that are pending enrichment
+                logging.info(f"Fetching batch of {batch_size} transcripts needing entity extraction (status='pending_enrichment')...")
                 cur.execute(
                     sql.SQL("""
                         SELECT t.id, t.media_id, t.text
                         FROM content_creation.transcripts t
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM content_creation.entities e
-                            WHERE e.transcript_id = t.id
-                        )
+                        WHERE t.status = 'pending_enrichment' -- <<< SELECT BASED ON STATUS
                         LIMIT %s;
                     """),
                     (batch_size,)
@@ -83,20 +74,25 @@ def generate_entities(batch_size=50): # Process more transcripts at once
 
                 if not results:
                     logging.info("No more transcripts found needing entity extraction.")
-                    break
+                    break # Exit the loop if no results
 
                 logging.info(f"Found {len(results)} transcripts in this batch.")
                 target_transcripts = results
+                # Store IDs immediately for status update later
+                processed_ids_in_batch = [row[0] for row in target_transcripts]
                 processed_transcript_count += len(results)
 
+
             # Prepare texts for spaCy processing
-            texts = [(row[2], {"transcript_id": row[0], "media_id": row[1]}) for row in target_transcripts] # Keep metadata
+            # Use tuple format: (text, context_dict)
+            texts_with_context = [(row[2], {"transcript_id": row[0], "media_id": row[1]}) for row in target_transcripts]
 
             # Process texts with spaCy using nlp.pipe for efficiency
-            logging.info(f"Processing {len(texts)} transcripts with spaCy...")
+            logging.info(f"Processing {len(texts_with_context)} transcripts with spaCy...")
             entity_data_tuples = []
             # Adjust n_process based on CPU cores, batch_size based on memory
-            for doc, context in nlp.pipe(texts, as_tuples=True, batch_size=10, n_process=1):
+            # Make sure nlp.pipe gets the texts correctly from texts_with_context
+            for doc, context in nlp.pipe(texts_with_context, as_tuples=True, batch_size=10, n_process=1):
                 transcript_id = context["transcript_id"]
                 media_id = context["media_id"]
                 doc_entity_count = 0
@@ -110,34 +106,59 @@ def generate_entities(batch_size=50): # Process more transcripts at once
                         ent.end_char    # End character offset
                     ))
                     doc_entity_count += 1
-                if doc_entity_count > 0:
-                     logging.debug(f"Found {doc_entity_count} entities in transcript ID {transcript_id}")
+                # No need for debug log per doc unless troubleshooting
+                # if doc_entity_count > 0:
+                #      logging.debug(f"Found {doc_entity_count} entities in transcript ID {transcript_id}")
 
+            # --- UPDATE STATUS for processed transcripts --- <<< ADDED THIS BLOCK
+            if processed_ids_in_batch:
+                logging.info(f"Updating status to 'entities_extracted' for {len(processed_ids_in_batch)} processed transcripts...")
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            sql.SQL("""
+                                UPDATE content_creation.transcripts
+                                SET status = 'entities_extracted'
+                                WHERE id = ANY(%s); -- Use ANY for efficient update on list
+                            """),
+                            (processed_ids_in_batch,) # Pass the list of IDs processed
+                        )
+                    conn.commit() # Commit status update
+                    logging.info("Status update committed.")
+                except psycopg2.Error as e_update:
+                     logging.error(f"Database error updating transcript statuses: {e_update}")
+                     # Should we rollback the whole batch? Maybe just log error and continue?
+                     # For now, log and continue. The next run might retry them if status wasn't updated.
+                     if conn: conn.rollback() # Rollback this specific transaction attempt
 
-            # Insert entities into the database using execute_values
+            # --- Insert entities (if any were found) ---
             if entity_data_tuples:
                 logging.info(f"Inserting {len(entity_data_tuples)} entities into the database...")
-                with conn.cursor() as cur:
-                    execute_values(
-                        cur,
-                        """
-                        INSERT INTO content_creation.entities
-                            (transcript_id, media_id, text, label, start_char, end_char)
-                        VALUES %s;
-                        """,
-                        entity_data_tuples,
-                        template="(%s, %s, %s, %s, %s, %s)",
-                        page_size=100
-                    )
-                conn.commit()
-                total_entity_count += len(entity_data_tuples)
-                logging.info(f"Successfully inserted batch. Total entities found so far: {total_entity_count}")
+                try:
+                    with conn.cursor() as cur:
+                        execute_values(
+                            cur,
+                            """
+                            INSERT INTO content_creation.entities
+                                (transcript_id, media_id, text, label, start_char, end_char)
+                            VALUES %s;
+                            """,
+                            entity_data_tuples,
+                            template="(%s, %s, %s, %s, %s, %s)",
+                            page_size=100
+                        )
+                    conn.commit() # Commit entity inserts
+                    total_entity_count += len(entity_data_tuples)
+                    logging.info(f"Successfully inserted batch of entities. Total entities found so far: {total_entity_count}")
+                except psycopg2.Error as e_insert:
+                     logging.error(f"Database error inserting entities: {e_insert}")
+                     if conn: conn.rollback() # Rollback this specific transaction attempt
             else:
                  logging.info("No entities found in this batch of transcripts.")
 
 
     except psycopg2.Error as e:
-        logging.error(f"Database error during entity generation: {e}")
+        logging.error(f"Database error during entity generation main loop: {e}")
         if conn: conn.rollback()
     except Exception as e:
         logging.error(f"An unexpected error occurred during entity generation: {e}")
@@ -147,18 +168,12 @@ def generate_entities(batch_size=50): # Process more transcripts at once
     finally:
         db_utils.close_db_connection(conn, "generate_entities")
 
-    logging.info(f"Entity generation process finished. Processed {processed_transcript_count} transcripts. Found {total_entity_count} entities.")
+    logging.info(f"Entity generation process finished. Processed {processed_transcript_count} transcripts. Found {total_entity_count} entities in this run.")
 
 
 # --- Main Execution ---
 if __name__ == "__main__":
     logging.info("--- Starting Entity Generation Script ---")
-    # Add args later if needed (e.g., batch_size)
-    # parser = argparse.ArgumentParser(description="Generate named entities from transcripts.")
-    # parser.add_argument("--batch_size", type=int, default=50, help="Number of transcripts to process in each batch.")
-    # args = parser.parse_args()
-    # generate_entities(batch_size=args.batch_size)
-
     if nlp: # Only run if model loaded successfully
         generate_entities()
     else:

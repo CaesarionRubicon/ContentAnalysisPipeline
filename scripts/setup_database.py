@@ -58,6 +58,7 @@ CREATE TABLE content_creation.transcripts (
     end_sec REAL,   -- Can be NULL
     text TEXT NOT NULL,
     confidence REAL, -- Optional confidence score from STT
+    status VARCHAR(50) DEFAULT 'pending_enrichment',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 """
