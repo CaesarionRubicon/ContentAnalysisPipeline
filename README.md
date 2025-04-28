@@ -6,7 +6,7 @@ This project aims to build a pipeline for ingesting, analyzing, and querying vid
 
 To create a streamlined video editing and creation pipeline leveraging AI capabilities like clip retrieval (semantic search), sound production, and potentially video assembly, driven by natural language interaction.
 
-## Current Status (As of 2025-04-27)
+## Current Status (As of 2025-04-27/28)
 
 *   **Phase 1 (Foundation Setup) Complete:**
     *   Project structure established on Drive D.
@@ -14,8 +14,10 @@ To create a streamlined video editing and creation pipeline leveraging AI capabi
     *   Python virtual environment (`venv`) set up.
     *   PostgreSQL database (`content_creation`) schema defined and created using `scripts/setup_database.py`, including `pgvector` extension and tables for media, transcripts, embeddings, scenes, objects, faces.
     *   Centralized configuration implemented via `.env` (for secrets) and `config/config.py` (for settings and paths).
-*   **Phase 2 (Data Ingestion) Started:**
-    *   Basic `scripts/ingest_data.py` created with logging, argument parsing (for file/directory input), and functionality to register media files (video, audio, image based on extension) in the `media` table.
+*   **Phase 2 (Data Ingestion) Mostly Complete (for single files):**
+    *   `scripts/ingest_data.py` created: registers media, extracts metadata (`pymediainfo`), checks for/generates transcripts (`Whisper`), ingests transcripts (`pysrt`).
+*   **Phase 3 (Enrichment) Started:**
+    *   `scripts/generate_embeddings.py` created to generate Sentence Transformer embeddings for ingested transcripts. ⏳ (Needs testing)
 
 ## Setup
 
@@ -23,6 +25,9 @@ To create a streamlined video editing and creation pipeline leveraging AI capabi
     *   Python 3.x
     *   PostgreSQL Server (v17 used) with `pgvector` extension capability.
     *   Git
+    *   MediaInfo library (install from [https://mediaarea.net/en/MediaInfo/Download](https://mediaarea.net/en/MediaInfo/Download)) - needed for metadata extraction.
+    *   (Optional but recommended for Whisper) FFmpeg available in system PATH.
+    *   (Optional for Whisper GPU) NVIDIA GPU with CUDA installed.
 2.  **Clone/Setup Project:** (Assuming you have the code)
     ```bash
     # Navigate to project directory
@@ -32,8 +37,10 @@ To create a streamlined video editing and creation pipeline leveraging AI capabi
     python -m venv venv
     .\venv\Scripts\activate  # Windows PowerShell/cmd
 
-    # Install Dependencies
+    # Install Dependencies (including PyTorch for CUDA if using GPU)
     pip install -r requirements.txt
+    # Visit pytorch.org for specific command if needed, e.g.:
+    # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
     # Configure Environment
     # Create a .env file in the project root (D:\ContentAnalysisPipeline)
@@ -53,41 +60,44 @@ To create a streamlined video editing and creation pipeline leveraging AI capabi
 
 ## Running the Pipeline (Current)
 
-*   **Ingest Data:**
-    *   To ingest a single file:
-        ```bash
-        python scripts/ingest_data.py --file "D:/path/to/your/video.mp4"
-        ```
-    *   To ingest all files in a directory:
-        ```bash
-        python scripts/ingest_data.py --directory "D:/path/to/your/media_folder"
-        ```
-    *   Check `outputs/logs/ingestion.log` for detailed logs.
+*   **Ingest Data:** (Handles metadata and transcription)
+    ```bash
+    # Example for a single file:
+    python scripts/ingest_data.py --file "D:/path/to/your/video.mp4"
+
+    # Example for a directory:
+    python scripts/ingest_data.py --directory "D:/path/to/your/media_folder"
+    ```
+*   **Generate Embeddings:** (Run after ingesting transcripts)
+    ```bash
+    python scripts/generate_embeddings.py
+    ```
+*   Check `outputs/logs/ingestion.log` and `outputs/logs/embedding_generation.log` for detailed logs.
 
 ## Next Steps (Blueprint)
 
-1.  **Phase 2 (Ingestion) Continued:**
-    *   Extract basic metadata (duration, etc.) in `ingest_data.py`.
-    *   Implement ingestion of existing transcript files (`.srt`).
-    *   Integrate automated transcription (e.g., Whisper).
-    *   Integrate scene detection.
-    *   Integrate Google VI JSON metadata parsing.
-2.  **Phase 3 (Processing & Enrichment):**
-    *   Implement embedding generation (`generate_embeddings.py`).
-    *   Implement summarization (optional).
-    *   Implement object/face detection (optional).
-3.  **Phase 4 (Querying & Application):**
+1.  **Phase 3 (Enrichment) Continued:**
+    *   Test and refine `generate_embeddings.py`. ✅
+    *   Implement Semantic Tagging (NER/Topics).
+    *   Implement Multi-Layer Summarization.
+    *   Implement Advanced Metadata Extraction (Tone/Sentiment).
+2.  **Phase 4 (Querying & Application):**
     *   Implement semantic search (`query_pipeline.py`).
     *   Build CLI/API.
     *   Develop content assembly logic.
-4.  **Phase 5 (Deployment & Ops):**
+3.  **Phase 5 (Deployment & Ops):**
     *   Dockerize.
     *   Cloud deployment.
-    *   Optimization.
+    *   Optimization (Task Queues, Caching).
+    *   Monitoring & Feedback Loop.
+
+## Active Scripts
+
+The core, active scripts for this pipeline currently are:
+*   `scripts/setup_database.py`
+*   `scripts/ingest_data.py`
+*   `scripts/generate_embeddings.py`
 
 ## Untracked Scripts Warning
 
-The `scripts/` directory currently contains many untracked scripts migrated from a previous project version (`VoteCarney2025Ad`). These scripts are **not** currently used by the refactored pipeline and need significant updates to work with the new structure and database schema. They are being kept temporarily as a reference for migrating logic. The core, active scripts for this pipeline are:
-*   `scripts/setup_database.py`
-*   `scripts/ingest_data.py` (in progress)
-*   (Future: `generate_embeddings.py`, `query_pipeline.py`, etc.)
+The `scripts/_old_scripts_reference/` directory contains many untracked scripts migrated from a previous project version (`VoteCarney2025Ad`). These scripts are **not** currently used by the refactored pipeline and need significant updates. They are being kept temporarily as a reference only and are ignored by Git.
