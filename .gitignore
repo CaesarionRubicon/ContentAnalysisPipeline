@@ -23,6 +23,7 @@ outputs/
 # data/raw/                   # Consider ignoring if raw media files are huge and managed elsewhere
 # Ignore old reference scripts
 scripts/_old_scripts_reference/
+data/
 
 # Temporary files
 *.tmp
