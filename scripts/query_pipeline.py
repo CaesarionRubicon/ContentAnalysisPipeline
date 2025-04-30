@@ -8,6 +8,8 @@ from psycopg2.extras import DictCursor  # Use DictCursor for easier row access
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
 import torch  # Import torch for device management
+from concatenate_clips import concatenate_clips  # Added for clip assembly
+import datetime  # Added for timestamp generation
 
 # --- Add Project Root to Python Path ---
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -182,6 +184,17 @@ if __name__ == "__main__":
         action="store_true",
         help="Automatically extract all returned clips without prompting"
     )
+    parser.add_argument(
+        "--assemble",
+        action="store_true",
+        help="After extraction, concatenate all clips into a single video"
+    )
+    parser.add_argument(
+        "--assembled-out",
+        type=str,
+        default="outputs/assembled/combined.mp4",
+        help="Path to write the assembled video"
+    )
     args = parser.parse_args()
 
     extract_all = args.extract_all
@@ -227,5 +240,16 @@ if __name__ == "__main__":
         print("\n--- End of Results ---")
     else:
         print("No results found matching your criteria or an error occurred.")
+
+    # If requested, assemble all clips just extracted
+    if args.assemble and results:
+        try:
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            base = args.assembled_out.rstrip(".mp4")
+            out_path = f"{base}_{ts}.mp4"
+            concatenate_clips("outputs/clips", out_path)
+            print(f"\n[INFO] Combined video saved to: {out_path}")
+        except Exception as e:
+            print(f"\n[ERROR] Failed to assemble clips: {e}")
 
     logging.info("--- Query Script Finished ---")
