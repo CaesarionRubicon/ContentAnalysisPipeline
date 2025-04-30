@@ -35,9 +35,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest --cov=scripts --cov-report=term-missing 
+          pytest --cov=scripts --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}    
+        uses: codecov/codecov-action@v3   
