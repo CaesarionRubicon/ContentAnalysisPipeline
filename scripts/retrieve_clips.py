@@ -1,7 +1,7 @@
 """
 scripts/retrieve_clips.py
 
-Provides functionality to extract a time‐range clip from a media file
+Provides functionality to extract a time-range clip from a media file
 using ffmpeg. Generates a unique filename per source/start/end triple
 and handles errors cleanly.
 """
@@ -11,6 +11,7 @@ import subprocess
 import sys
 import logging
 from urllib.parse import urlparse, unquote
+import shutil
 
 # Configure basic logging
 logging.basicConfig(
@@ -60,6 +61,13 @@ def extract_clip(source_uri: str, start_sec: float, end_sec: float, output_dir: 
             path = path[1:]
         source_uri = path
 
+    # Ensure ffmpeg is available
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError(
+            "ffmpeg not found in PATH. "
+            "Please install ffmpeg and ensure it's on your system PATH."
+        )
+
     logging.info(
         f"extract_clip() called with source_uri={source_uri!r}, "
         f"start_sec={start_sec}, end_sec={end_sec}, output_dir={output_dir!r}"
@@ -71,13 +79,16 @@ def extract_clip(source_uri: str, start_sec: float, end_sec: float, output_dir: 
 
     os.makedirs(output_dir, exist_ok=True)
     output_path = generate_output_filename(source_uri, start_sec, end_sec, output_dir)
+    
+    # Build ffmpeg command: input, then seek, then duration
+    duration = end_sec - start_sec
     cmd = [
         "ffmpeg",
-        "-y",                     # overwrite output
-        "-ss", str(start_sec),    # start time
-        "-i", source_uri,         # input file
-        "-to", str(end_sec),      # end time
-        "-c", "copy",             # stream copy for speed/quality
+        "-y",
+        "-i", source_uri,
+        "-ss", str(start_sec),
+        "-t", str(duration),
+        "-c", "copy",
         output_path
     ]
 
