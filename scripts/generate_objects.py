@@ -16,6 +16,7 @@ sys.path.append(str(PROJECT_ROOT))
 import os
 import subprocess
 import logging
+from urllib.parse import urlparse, unquote
 from ultralytics import YOLO
 from scripts.db_utils import get_db_connection
 
@@ -50,8 +51,17 @@ def generate_object_tags():
 
         for tid, mid, start_sec, end_sec, src in segments:
             midpoint = (start_sec + end_sec) / 2
-            # Convert file:// URI if needed
-            video = src.replace("file://", "")
+
+            # Normalize file:// URIs to local paths
+            video = src
+            if video.startswith("file://"):
+                parsed = urlparse(video)
+                path = unquote(parsed.path)
+                # On Windows, strip leading slash from "/C:/" paths
+                if os.name == "nt" and path.startswith("/") and len(path) > 2 and path[2] == ":":
+                    path = path[1:]
+                video = path
+
             frame_file = f"outputs/frames/seg_{tid}.jpg"
             extract_frame(video, midpoint, frame_file)
 
@@ -71,7 +81,8 @@ def generate_object_tags():
                     """,
                     (tid, name, conf)
                 )
-            # Mark status advanced if desired
+
+            # Update status
             cur.execute(
                 "UPDATE content_creation.transcripts SET status = 'objects_generated' WHERE id = %s;",
                 (tid,)
