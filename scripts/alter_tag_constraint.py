@@ -6,6 +6,19 @@ Drops the old tag_type CHECK constraint on content_tags and recreates it
 to include 'object'.
 """
 
+#!/usr/bin/env python3
+"""
+scripts/alter_tag_constraint.py
+...
+"""
+
+import sys
+from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.append(str(PROJECT_ROOT))
+
 from scripts.db_utils import get_db_connection
 
 def main():
