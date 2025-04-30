@@ -22,7 +22,7 @@ from scripts.db_utils import get_db_connection
 
 logging.basicConfig(level=logging.INFO)
 
-MODEL_NAME = "yolov8n.pt"  # change if you want a larger model
+MODEL_NAME = "yolov8n.pt"  # or choose a different YOLOv8 model
 
 def extract_frame(video_path: str, time_sec: float, output_path: str) -> str:
     """Grab one frame at time_sec using ffmpeg."""
@@ -45,7 +45,7 @@ def generate_object_tags():
             SELECT t.id, t.media_id, t.start_sec, t.end_sec, m.source_uri
             FROM content_creation.transcripts t
             JOIN content_creation.media m ON t.media_id = m.id
-            WHERE t.status = 'tags_generated'
+            WHERE t.status = 'tags_generated';
         """)
         segments = cur.fetchall()
 
@@ -57,7 +57,6 @@ def generate_object_tags():
             if video.startswith("file://"):
                 parsed = urlparse(video)
                 path = unquote(parsed.path)
-                # On Windows, strip leading slash from "/C:/" paths
                 if os.name == "nt" and path.startswith("/") and len(path) > 2 and path[2] == ":":
                     path = path[1:]
                 video = path
@@ -65,7 +64,14 @@ def generate_object_tags():
             frame_file = f"outputs/frames/seg_{tid}.jpg"
             extract_frame(video, midpoint, frame_file)
 
-            results = model(frame_file)[0]
+            # Run inference on CPU to avoid CUDA NMS issues
+            results = model.predict(
+                source=frame_file,
+                device="cpu",
+                conf=0.3,
+                verbose=False
+            )[0]
+
             for box in results.boxes:
                 cls_id = int(box.cls[0].item())
                 conf = float(box.conf[0].item())
@@ -82,7 +88,6 @@ def generate_object_tags():
                     (tid, name, conf)
                 )
 
-            # Update status
             cur.execute(
                 "UPDATE content_creation.transcripts SET status = 'objects_generated' WHERE id = %s;",
                 (tid,)
