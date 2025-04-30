@@ -32,7 +32,12 @@ jobs:
       - name: Lint with flake8
         run: |
           flake8
-          
+
       - name: Run tests with coverage
         run: |
           pytest --cov=scripts --cov-report=term-missing 
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}    
