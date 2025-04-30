@@ -110,6 +110,11 @@ To create a streamlined video editing and creation pipeline leveraging AI capabi
         --end-sec 35 \
         --output-dir outputs/clips
 
+8.    **Clean Generated Outputs**
+      Use the pipeline wrapper to remove all extracted clips and assembled videos:
+
+         python scripts/pipeline.py clean
+
 *   Check `outputs/logs/` for detailed logs (`ingestion.log`, `embedding_generation.log`, etc.).
 
 ## Next Steps (Blueprint)
