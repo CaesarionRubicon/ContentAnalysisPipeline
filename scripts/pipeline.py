@@ -28,6 +28,7 @@ def cmd_enrich(args):
     run_command([sys.executable, "scripts/generate_entities.py"])
     run_command([sys.executable, "scripts/generate_summaries.py"])
     run_command([sys.executable, "scripts/generate_tags.py"])
+    run_command([sys.executable, "scripts/generate_objects.py"])
 
 def cmd_query(args):
     """Perform semantic search, optional extraction and assembly."""
