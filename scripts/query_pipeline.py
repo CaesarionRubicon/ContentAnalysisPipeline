@@ -177,7 +177,14 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--top_n", type=int, default=5, help="Number of results.")
     parser.add_argument("--tag-type", type=str, help="Filter by tag type.")
     parser.add_argument("--tag-value", type=str, help="Filter by tag value (case-insensitive).")
+    parser.add_argument(
+        "--extract-all",
+        action="store_true",
+        help="Automatically extract all returned clips without prompting"
+    )
     args = parser.parse_args()
+
+    extract_all = args.extract_all
 
     if args.tag_value and not args.tag_type:
         parser.error("--tag-type is required when --tag-value is provided.")
@@ -203,9 +210,14 @@ if __name__ == "__main__":
             print(f"  Summary:  {res.get('summary', 'N/A')}")
             print(f"  Tags:     {', '.join(res.get('tags', ['N/A']))}")
 
-            # --- PROMPT FOR CLIP EXTRACTION ---
-            choice = input("    Extract this clip? [y/N]: ").strip().lower()
-            if choice == "y":
+            # --- CLIP EXTRACTION ---
+            if extract_all:
+                do_extract = True
+            else:
+                choice = input("    Extract this clip? [y/N]: ").strip().lower()
+                do_extract = (choice == "y")
+
+            if do_extract:
                 try:
                     clip_path = extract_clip(res['source_uri'], res['start_sec'], res['end_sec'])
                     print(f"    [INFO] Clip saved to: {clip_path}")
