@@ -6,10 +6,16 @@ Detect objects in video frames for each transcript segment and
 add object tags to content_tags.
 """
 
+import sys
+from pathlib import Path
+
+# --- Add Project Root to Python Path ---
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.append(str(PROJECT_ROOT))
+
 import os
 import subprocess
 import logging
-from pathlib import Path
 from ultralytics import YOLO
 from scripts.db_utils import get_db_connection
 
