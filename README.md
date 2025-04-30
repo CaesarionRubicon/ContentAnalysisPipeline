@@ -1,149 +1,203 @@
 # Content Analysis Pipeline
 
-This project aims to build a pipeline for ingesting, analyzing, and querying video and audio content, with a focus on enabling semantic search and preparing for AI-driven content creation tasks.
+**Note to self:** Update the Conversation Recovery Guide whenever adding a new subcommand or phase.
+
+# This project aims to build a pipeline for ingesting, analyzing, and querying video and audio content, with a focus on enabling semantic search and preparing for AI-driven content creation tasks.
+
+---
+
+## Table of Contents
+
+- [Project Goal](#project-goal)  
+- [Project Structure](#project-structure)  
+- [Setup](#setup)  
+- [Pipeline Phases](#pipeline-phases)  
+- [Unified CLI Usage](#unified-cli-usage)  
+- [Testing & Quality](#testing--quality)  
+- [CI / GitHub Actions](#ci--github-actions)  
+- [Next Steps / Roadmap](#next-steps--roadmap)  
+- [Troubleshooting](#troubleshooting)  
+- [Conversation Recovery Guide](#conversation-recovery-guide)  
+
+---
 
 ## Project Goal
 
 To create a streamlined video editing and creation pipeline leveraging AI capabilities like precise clip retrieval (semantic search filtered by metadata), summarization, and potentially automated editing suggestions, driven by natural language interaction and enriched metadata.
 
-## Current Status (As of 2025-04-29)
+---
 
-*   **Phase 1 (Foundation Setup) Complete:**
-    *   Project structure established (`D:\ContentAnalysisPipeline`).
-    *   Git repository initialized (`.gitignore` configured).
-    *   Python virtual environment (`venv`) set up (`requirements.txt` maintained).
-    *   PostgreSQL database (`content_creation`) schema defined (`scripts/setup_database.py`). `pgvector` enabled. Includes tables: `media`, `transcripts`, `embeddings`, `entities`, `summaries`, `content_tags`, `scenes`, `objects`, `faces`.
-    *   Centralized configuration (`.env`, `config/config.py`). Handles DB credentials, API keys, paths. Loads `.env` overriding system vars.
-    *   Database utilities (`scripts/db_utils.py`).
-*   **Phase 2 (Data Ingestion) Complete (for file workflow):**
-    *   `scripts/ingest_data.py`: Handles media registration (from files), extracts metadata (`pymediainfo`), checks for/generates transcripts (`Whisper` via SRT), sets initial transcript status to `'pending_enrichment'`. Tested. ✅
-*   **Phase 3 (Enrichment) Complete (Core Text Features):**
-    *   `scripts/generate_embeddings.py`: Generates Sentence Transformer (`all-MiniLM-L6-v2`) embeddings for transcripts. Tested. ✅
-    *   `scripts/generate_entities.py`: Generates Named Entities (NER) using spaCy (`en_core_web_sm`), updates status to `'entities_extracted'`. Tested. ✅
-    *   `scripts/generate_summaries.py`: Generates summaries using OpenAI API (`gpt-3.5-turbo`), stores in `summaries` table, updates status to `'summarized'`. Includes `LIMIT 1` for testing. Tested. ✅
-    *   `scripts/generate_tags.py`: Generates topic/keyword tags using Hugging Face Zero-Shot Classification (`facebook/bart-large-mnli`), stores in `content_tags` table, updates status to `'tags_generated'`. Includes `LIMIT 1` for testing. Tested. ✅
-*   **Phase 4 (Querying & Application) In Progress:**
-    *   `scripts/query_pipeline.py`: Performs semantic search, enhanced to filter by tags (`--tag-type`, `--tag-value`) and display summaries/tags in results. Tested. ✅
-    *   `scripts/retrieve_clips.py`: New script to extract clips via ffmpeg, integrated into `query_pipeline.py`. ✅
+## Project Structure
+.
+├── config/
+│   └── config.py                # DB/API keys, paths, environment loader
+├── scripts/
+│   ├── init.py
+│   ├── setup_database.py        # Schema setup & extension enablement
+│   ├── db_utils.py              # Postgres connection helpers
+│   ├── ingest_data.py           # Media registration & transcription
+│   ├── generate_embeddings.py   # SentenceTransformer embeddings
+│   ├── generate_entities.py     # spaCy NER
+│   ├── generate_summaries.py    # OpenAI GPT summaries
+│   ├── generate_tags.py         # HuggingFace Zero-Shot tags
+│   ├── query_pipeline.py        # Semantic search + tag filters + prompts
+│   ├── retrieve_clips.py        # ffmpeg clip extractor
+│   ├── concatenate_clips.py     # ffmpeg clip assembler
+│   └── pipeline.py              # Master CLI wrapper
+├── tests/                       # pytest suite
+├── .github/
+│   └── workflows/ci.yml         # GitHub Actions workflow
+├── outputs/                     # Generated clips, logs, assembled videos
+├── requirements.txt             # Python dependencies
+├── .flake8                      # Linting rules
+└── README.md
+
+
+---
 
 ## Setup
 
-1.  **Prerequisites:**
-    *   Python 3.x
-    *   PostgreSQL Server (v17 used) with `pgvector` extension capability.
-    *   Git
-    *   MediaInfo library (install from https://mediaarea.net/en/MediaInfo/Download).
-    *   FFmpeg available in system PATH.
-    *   (Optional for Whisper GPU) NVIDIA GPU with CUDA installed.
-2.  **Clone/Setup Project:** (Assuming you have the code)
-    ```bash
-    # Navigate to project directory
-    cd D:\ContentAnalysisPipeline
+1. Clone & enter the project:
 
-    # Create/Activate Virtual Environment
-    python -m venv venv
-    .\venv\Scripts\activate  # Windows PowerShell/cmd
+   ```bash
+   git clone <repo_url> && cd ContentAnalysisPipeline
+Create & activate a Python virtual environment:
 
-    # Install Dependencies
-    pip install -r requirements.txt
+# Windows
+python -m venv venv
+.\venv\Scripts\activate
 
-    # Download spaCy English model
-    python -m spacy download en_core_web_sm
+# macOS/Linux
+# python3 -m venv venv
+# source venv/bin/activate
+Install dependencies:
 
-    # Configure Environment
-    # Create a .env file in the project root (D:\ContentAnalysisPipeline)
-    # Add your database credentials and API key:
-    # DB_NAME="content_creation"
-    # DB_USER="your_db_user"
-    # DB_PASSWORD="your_db_password"
-    # DB_HOST="localhost"
-    # DB_PORT="5432"
-    # OPENAI_API_KEY="sk-..." # Required for summarization
+pip install -r requirements.txt
+Download spaCy model:
 
-    # Setup/Reset Database Schema (Wipes existing data!)
-    python -m scripts.setup_database
-    ```
+python -m spacy download en_core_web_sm
+Configure environment variables: create a .env in the project root with:
 
-## Running the Pipeline (Current Order - For Full Processing)
+DB_NAME=content_creation
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_HOST=localhost
+DB_PORT=5432
+OPENAI_API_KEY=sk-...
+Initialize the database schema:
 
-1.  **Ingest Data:**
-    ```bash
-    python scripts/ingest_data.py --file "D:\path\to\your\video.mp4"
-    ```
-2.  **Generate Embeddings:**
-    ```bash
-    python scripts/generate_embeddings.py
-    ```
-3.  **Generate Named Entities:**
-    ```bash
-    python scripts/generate_entities.py
-    ```
-4.  **Generate Summaries:**
-    ```bash
-    python scripts/generate_summaries.py
-    ```
-5.  **Generate Tags:**
-    ```bash
-    python scripts/generate_tags.py
-    ```
-6.  **Query Data:**
-    ```bash
-    # Simple semantic search
-    python scripts/query_pipeline.py "your query text" -n 5
+python -m scripts.setup_database
+Prerequisites
+Python 3.x
+PostgreSQL (v17) with pgvector extension
+Git
+MediaInfo library (Download)
+FFmpeg in your system PATH
+(Optional) NVIDIA GPU + CUDA for Whisper GPU mode
+Pipeline Phases
+Ingest
+Register media, extract metadata, generate transcripts via Whisper.
+Script: scripts/ingest_data.py
 
-    # Semantic search filtered by tag
-    python scripts/query_pipeline.py "your query text" -n 5 --tag-type topic --tag-value "some topic"
-    ```
-7.  **Extract Clips**
-    You can extract clips either interactively via the query script or directly via the retrieval script.
+Enrichment
 
-    Method A: Interactive via Query  
-      # Run a semantic search; you’ll be prompted to save each clip  
-      python scripts/query_pipeline.py "your query text" -n 5  
-      # After each result, type "y" to extract the clip to outputs/clips/
+Embeddings (scripts/generate_embeddings.py)
+Named Entities (scripts/generate_entities.py)
+Summaries (scripts/generate_summaries.py)
+Tags (scripts/generate_tags.py)
+Query & Clip Retrieval
 
-    Method B: Direct Clip Extraction  
-      # Invoke the retrieval script with explicit times  
-      python scripts/retrieve_clips.py \
-        --source-uri "path/to/your/video.mp4" \
-        --start-sec 30 \
-        --end-sec 35 \
-        --output-dir outputs/clips
+Semantic search + tag filters (scripts/query_pipeline.py)
+Interactive or batch clip extraction (scripts/retrieve_clips.py with --extract-all)
+Assemble clips (scripts/concatenate_clips.py)
+Cleanup
+Remove all generated clips & assemblies:
+scripts/pipeline.py clean
 
-8.    **Clean Generated Outputs**
-      Use the pipeline wrapper to remove all extracted clips and assembled videos:
+Unified CLI Usage
+All through the master CLI: scripts/pipeline.py
 
-         python scripts/pipeline.py clean
+Ingest media:
 
-*   Check `outputs/logs/` for detailed logs (`ingestion.log`, `embedding_generation.log`, etc.).
+python scripts/pipeline.py ingest --file path/to/video.mp4
+Enrich data:
 
-## Next Steps (Blueprint)
+python scripts/pipeline.py enrich
+Query (with extraction & assembly):
 
-1.  **Phase 4 (Querying & Application) Continued:**
-    *   Enhance User Interface (CLI/API).
-    *   Develop Content Assembly logic.
-2.  **Phase 3 (Enrichment) Enhancements (Optional):**
-    *   Implement Advanced Sentiment/Tone Analysis.
-    *   Implement Multimodal Analysis (Video: Scenes, Objects, Faces).
-3.  **Phase 5 (Deployment & Ops):**
-    *   Dockerize.
-    *   Cloud deployment.
-    *   Optimization (Task Queues, Caching, Async Processing).
-    *   Monitoring & Feedback Loop.
+python scripts/pipeline.py query "your query" -n 5 --extract-all --assemble
+Extract single clip:
 
-## Active Scripts
+python scripts/pipeline.py extract \
+  --source-uri file:///...mp4 \
+  --start-sec 10 --end-sec 15
+Assemble clips:
 
-*   `config/config.py`
-*   `scripts/setup_database.py`
-*   `scripts/db_utils.py`
-*   `scripts/ingest_data.py`
-*   `scripts/generate_embeddings.py`
-*   `scripts/generate_entities.py`
-*   `scripts/generate_summaries.py`
-*   `scripts/generate_tags.py`
-*   `scripts/query_pipeline.py`
-*   `scripts/retrieve_clips.py`
+python scripts/pipeline.py assemble \
+  --input-dir outputs/clips \
+  --output-file outputs/assembled/combined.mp4
+Clean outputs:
 
-## Untracked Scripts Warning
+python scripts/pipeline.py clean
+Run --help on any subcommand for details:
 
-The `scripts/_old_scripts_reference/` directory contains untracked scripts kept for reference only. The `.gitignore` file is configured to ignore `data/`, `outputs/`, `venv/`, `.env`, etc.
+python scripts/pipeline.py <subcommand> --help
+Log files live under outputs/logs/ (e.g. ingestion.log, embedding_generation.log).
+
+Testing & Quality
+Unit Tests: tests/ (pytest)
+Coverage: pytest-cov, Codecov integration
+Linting: flake8 (.flake8)
+Run locally:
+
+pytest --cov=scripts --cov-report=term-missing
+flake8
+CI / GitHub Actions
+Workflow in .github/workflows/ci.yml triggers on push & pull_request to main:
+
+Checkout code
+Setup Python & install deps
+Lint (flake8)
+Run tests with coverage (pytest + XML)
+Upload coverage to Codecov
+Next Steps / Roadmap
+Integration tests on a dummy media file
+Docker & docker-compose orchestration
+Parallel processing with Celery/RQ
+Monitoring & centralized logging (ELK/Sentry)
+REST API / Web UI (FastAPI)
+Extra enrichment: sentiment, face/object detection, multilingual
+Troubleshooting
+ffmpeg not found
+Ensure FFmpeg is installed and on your PATH:
+
+ffmpeg -version
+Database connection failures
+Check your .env values and that PostgreSQL is running:
+
+pg_isready
+Conversation Recovery Guide
+If you need to start a fresh chat, provide this summary:
+
+Project Goal: AI-driven video analysis & clip retrieval
+Location: <project_root>
+Key Scripts:
+scripts/pipeline.py (Unified CLI)
+ingest_data.py → generate_*.py → query_pipeline.py → retrieve_clips.py → concatenate_clips.py
+DB Status: Initialized with tables for media, transcripts, embeddings, entities, summaries, tags
+Latest Features: Unified CLI, testing suite, flake8 linting, GitHub Actions CI, Codecov
+Current Git Branch & Commit:
+git branch --show-current
+git log -1 --pretty=%H
+Open PR/Issues: PR #… / Issue #… (if any)
+Next Task: e.g. “Add integration test for dummy clip ingestion”
+Reference a Pipeline Phase or Next Steps item to pick up exactly where you left off.
+
+Notes on Changes
+Added Conversation Recovery Guide at the end for seamless context handover.
+Reformatted all shell commands in fenced code blocks.
+Ensured Table of Contents links match section headings.
+Inserted a Troubleshooting section for common pitfalls.
+Standardized Markdown headings, bullet styling, and backticks for code references.
+
+Once you commit this, your `README.md` will be self-contained, well-structured, and ready to help you—or any AI—pick up exactly where you left off.
