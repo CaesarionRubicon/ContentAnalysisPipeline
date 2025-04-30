@@ -81,11 +81,11 @@ def generate_object_tags():
                 cur.execute(
                     """
                     INSERT INTO content_creation.content_tags
-                      (transcript_id, tag_type, tag_value, score)
-                    VALUES (%s, 'object', %s, %s)
+                      (transcript_id, media_id, tag_type, tag_value, score)
+                    VALUES (%s, %s, 'object', %s, %s)
                     ON CONFLICT DO NOTHING;
                     """,
-                    (tid, name, conf)
+                    (tid, mid, name, conf)
                 )
 
             cur.execute(
