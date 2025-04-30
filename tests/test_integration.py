@@ -1,7 +1,8 @@
 import os
 import subprocess
-from pathlib import Path
 import pytest
+import sys
+from pathlib import Path
 
 # Define paths
 SAMPLE_VIDEO = Path("data/sample/sample.mp4")
@@ -11,9 +12,9 @@ OUTPUT_ASSEMBLED_DIR = Path("outputs/assembled")
 @pytest.fixture(scope="function")
 def clean_pipeline():
     """Fixture to clean the pipeline before and after the test."""
-    subprocess.run(["python", "scripts/pipeline.py", "clean"], check=True)
+    subprocess.run([sys.executable, "scripts/pipeline.py", "clean"], check=True)
     yield
-    subprocess.run(["python", "scripts/pipeline.py", "clean"], check=True)
+    subprocess.run([sys.executable, "scripts/pipeline.py", "clean"], check=True)
 
 def test_pipeline_integration(clean_pipeline):
     """Test the full pipeline integration using the sample video."""
@@ -24,19 +25,19 @@ def test_pipeline_integration(clean_pipeline):
 
     # Step 2: Ingest the sample video
     subprocess.run(
-        ["python", "scripts/pipeline.py", "ingest", "--file", str(SAMPLE_VIDEO)],
+        [sys.executable, "scripts/pipeline.py", "ingest", "--file", str(SAMPLE_VIDEO)],
         check=True
     )
 
     # Step 3: Enrich the data
     subprocess.run(
-        ["python", "scripts/pipeline.py", "enrich"],
+        [sys.executable, "scripts/pipeline.py", "enrich"],
         check=True
     )
 
     # Step 4: Query and assemble
     subprocess.run(
-        ["python", "scripts/pipeline.py", "query", "test", "-n", "1", "--extract-all", "--assemble"],
+        [sys.executable, "scripts/pipeline.py", "query", "test", "-n", "1", "--extract-all", "--assemble"],
         check=True
     )
 
