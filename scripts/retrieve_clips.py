@@ -22,7 +22,7 @@ logging.basicConfig(
 
 def generate_output_filename(source_uri: str, start_sec: float, end_sec: float, output_dir: str) -> str:
     """
-    Generate a unique output filename for the clip.
+    Generate a unique output filename for the clip with 2-decimal precision.
 
     Args:
         source_uri: Path to the original media file.
@@ -31,12 +31,13 @@ def generate_output_filename(source_uri: str, start_sec: float, end_sec: float, 
         output_dir: Directory where the clip should be saved.
 
     Returns:
-        Full path for the new clip file, e.g., "outputs/clips/video_0010_0020.mp4".
+        Full path for the new clip file, e.g., "outputs/clips/video_185p56_187p16.mp4".
     """
     base = os.path.splitext(os.path.basename(source_uri))[0]
-    start_i = int(start_sec)
-    end_i = int(end_sec)
-    filename = f"{base}_{start_i:04d}_{end_i:04d}.mp4"
+    # Format start/end with two decimals, replacing dot with 'p'
+    start_label = f"{start_sec:.2f}".replace('.', 'p')
+    end_label = f"{end_sec:.2f}".replace('.', 'p')
+    filename = f"{base}_{start_label}_{end_label}.mp4"
     return os.path.join(output_dir, filename)
 
 def extract_clip(source_uri: str, start_sec: float, end_sec: float, output_dir: str = "outputs/clips") -> str:

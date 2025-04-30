@@ -86,16 +86,28 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers(dest="command")
 
     # ingest
-    p_ingest = subparsers.add_parser("ingest", help="Ingest a media file")
+    p_ingest = subparsers.add_parser(
+        "ingest",
+        help="Ingest a media file",
+        description="Ingest a media file"
+    )
     p_ingest.add_argument("--file", "-f", required=True, help="Path to media file")
     p_ingest.set_defaults(func=cmd_ingest)
 
     # enrich
-    p_enrich = subparsers.add_parser("enrich", help="Run all enrichment steps")
+    p_enrich = subparsers.add_parser(
+        "enrich",
+        help="Run all enrichment steps",
+        description="Run all enrichment steps"
+    )
     p_enrich.set_defaults(func=cmd_enrich)
 
     # query
-    p_query = subparsers.add_parser("query", help="Semantic search (and optional extract/assemble)")
+    p_query = subparsers.add_parser(
+        "query",
+        help="Semantic search (and optional extract/assemble)",
+        description="Semantic search (and optional extract/assemble)"
+    )
     p_query.add_argument("query", type=str, help="Text query for semantic search")
     p_query.add_argument("-n", "--top_n", type=int, default=5, help="Number of results")
     p_query.add_argument("--tag-type", type=str, help="Filter by tag type")
@@ -106,7 +118,11 @@ if __name__ == "__main__":
     p_query.set_defaults(func=cmd_query)
 
     # extract
-    p_ext = subparsers.add_parser("extract", help="Extract a single clip")
+    p_ext = subparsers.add_parser(
+        "extract",
+        help="Extract a single clip",
+        description="Extract a single clip"
+    )
     p_ext.add_argument("--source-uri", "-i", required=True, help="Media file URI or path")
     p_ext.add_argument("--start-sec", "-s", type=float, required=True, help="Start time in seconds")
     p_ext.add_argument("--end-sec", "-e", type=float, required=True, help="End time in seconds")
@@ -114,13 +130,21 @@ if __name__ == "__main__":
     p_ext.set_defaults(func=cmd_extract)
 
     # assemble
-    p_ass = subparsers.add_parser("assemble", help="Concatenate clips into one video")
+    p_ass = subparsers.add_parser(
+        "assemble",
+        help="Concatenate clips into one video",
+        description="Concatenate clips"
+    )
     p_ass.add_argument("--input-dir", "-i", required=True, help="Directory of clips")
     p_ass.add_argument("--output-file", "-o", type=str, default="outputs/assembled/combined.mp4", help="Output file path")
     p_ass.set_defaults(func=cmd_assemble)
 
     # clean
-    p_clean = subparsers.add_parser("clean", help="Remove all generated clips and assemblies")
+    p_clean = subparsers.add_parser(
+        "clean",
+        help="Remove all generated clips and assemblies",
+        description="Remove all generated clips"
+    )
     p_clean.set_defaults(func=cmd_clean)
 
     # default help
